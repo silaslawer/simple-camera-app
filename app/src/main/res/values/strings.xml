@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">DocumentApp</string>
+    <string name="retake">Retake</string>
+    <string name="upload">Upload</string>
+</resources>
