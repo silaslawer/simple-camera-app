@@ -30,17 +30,38 @@ import androidx.core.content.ContextCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
+import com.koushikdutta.async.http.AsyncSSLSocketMiddleware;
 import com.koushikdutta.ion.Ion;
 import com.silaslawer.documentapp.R;
 import com.silaslawer.documentapp.util.ConnectionDetector;
 import com.squareup.picasso.Picasso;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 import dmax.dialog.SpotsDialog;
 
@@ -52,28 +73,15 @@ public class MainActivity extends AppCompatActivity {
     Button btnRetake;
     Button btnUpload;
 
-    Toolbar toolbar;
-    FloatingActionButton fabAddComment;
-
     ImageView imageViewDocument;
 
     Bitmap thumbnail;
-
-    //ImageButton btnUpload;
-    EditText complaint;
 
     final int PERMISSIONS_MULTIPLE_REQUEST = 999;
 
     String imagePath = "";
 
-    Uri mImageUri = null;
-
-    Dialog dialog;
-
     ConstraintLayout imageDisplayVisibility;
-
-    /*private static List<Escalation> escalationList;
-    EscalationAdapter escalationAdapter;*/
 
 
     SharedPreferences prefs;
@@ -89,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
 
         checkAndroidVersion();
 
+
         btnTakeImage = findViewById(R.id.btnTakeImage);
         imageDisplayVisibility = findViewById(R.id.imageDisplayVisibility);
 
@@ -97,12 +106,15 @@ public class MainActivity extends AppCompatActivity {
         prefs = PreferenceManager.getDefaultSharedPreferences(MainActivity.this);
         edit = prefs.edit();
 
+
         btnRetake = findViewById(R.id.btnRetake);
         btnUpload = findViewById(R.id.btnUpload);
 
         progressDialog = new SpotsDialog(this, R.style.Custom);
         progressDialog.setCancelable(true);
         connectionDetector = new ConnectionDetector(this);
+
+        getUserId();
 
         btnTakeImage.setOnClickListener(v -> {
 
@@ -119,8 +131,31 @@ public class MainActivity extends AppCompatActivity {
 
         btnUpload.setOnClickListener(v -> {
 
-            sendingEscalation();
+            try {
+                validationDocument();
+            } catch (UnrecoverableKeyException e) {
+                e.printStackTrace();
+            } catch (NoSuchAlgorithmException e) {
+                e.printStackTrace();
+            } catch (KeyStoreException e) {
+                e.printStackTrace();
+            } catch (KeyManagementException e) {
+                e.printStackTrace();
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (CertificateException e) {
+                e.printStackTrace();
+            }
         });
+    }
+
+    public void getUserId() {
+        long randomId = (long) (Math.random()*Math.pow(10,10));
+
+        edit.putString("userId", String.valueOf(randomId));
+        edit.commit();
     }
 
     private void checkAndroidVersion() {
@@ -139,9 +174,6 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (requestCode == PERMISSIONS_MULTIPLE_REQUEST  && resultCode == RESULT_OK && data != null) {
 
-                Log.d("RESULT", String.valueOf(data));
-                Log.d("RESULT", String.valueOf(requestCode));
-                Log.d("RESULT", String.valueOf(resultCode));
                 onCaptureImageResult(data);
             }
         }
@@ -190,11 +222,6 @@ public class MainActivity extends AppCompatActivity {
     private void onCaptureImageResult(Intent data) {
         thumbnail = (Bitmap) data.getExtras().get("data");
 
-        /*btnTakeImage.setVisibility(View.GONE);
-        imageDisplayVisibility.setVisibility(View.VISIBLE);
-
-        imageViewDocument.setImageBitmap(thumbnail);*/
-
         Uri tempUri = getImageUri(getApplicationContext(), thumbnail);
 
          imagePath =  getRealPathFromURI(tempUri);
@@ -211,9 +238,6 @@ public class MainActivity extends AppCompatActivity {
             edit.putString("image_string", imagePath);
             edit.commit();
         }
-
-
-       // Log.d("RESULT", selectedImageUri.getPath());
     }
 
     public Uri getImageUri(Context inContext, Bitmap inImage) {
@@ -242,15 +266,12 @@ public class MainActivity extends AppCompatActivity {
                 Snackbar.make(MainActivity.this.findViewById(android.R.id.content),
                         "Please Grant Permissions to upload profile photo",
                         Snackbar.LENGTH_INDEFINITE).setAction("ENABLE",
-                        new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                    requestPermissions(
-                                            new String[]{Manifest.permission
-                                                    .READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE,Manifest.permission.CAMERA},
-                                            PERMISSIONS_MULTIPLE_REQUEST);
-                                }
+                        v -> {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                requestPermissions(
+                                        new String[]{Manifest.permission
+                                                .READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE,Manifest.permission.CAMERA},
+                                        PERMISSIONS_MULTIPLE_REQUEST);
                             }
                         }).show();
             } else {
@@ -273,55 +294,73 @@ public class MainActivity extends AppCompatActivity {
         return cursor.getString(idx);
     }
 
-    private void sendingEscalation() {
-        connectionDetector = new ConnectionDetector(this);
+    private void validationDocument() throws UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException, URISyntaxException, IOException, CertificateException {
+        connectionDetector = new ConnectionDetector(this);g
+        progressDialog.show();
         if (connectionDetector.isNetworkAvailable()) {
 
-            String escalations = complaint.getText().toString();
+            TrustManager[] wrappedTrustManagers = new TrustManager[]{
+                    new X509TrustManager() {
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[]{};
+                        }
+                    }
+            };
+
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, wrappedTrustManagers, null);
+
+            AsyncSSLSocketMiddleware sslMiddleWare = Ion.getDefault(this).getHttpClient().getSSLSocketMiddleware();
+            sslMiddleWare.setTrustManagers(wrappedTrustManagers);
+            sslMiddleWare.setHostnameVerifier((hostname, session) -> true);
+            sslMiddleWare.setSSLContext(sslContext);
+
             File imageFile = new File(prefs.getString("image_string", ""));
+            System.out.println(prefs.getString("image_string", ""));
             Ion.with(this)
                     .load("POST", FILE_UPLOAD_ENDPOINT)
-                    .setLogging("Escalation Logs", Log.DEBUG)
-                    .setMultipartParameter("user_id", "try123")
-
+                    .setLogging("Document Logs", Log.DEBUG)
+                    .setMultipartParameter("user_id", prefs.getString("userId", ""))
                     .setMultipartFile("document", imageFile)
                     .asJsonObject()
+                    .withResponse()
                     .setCallback((e, result) -> {
-
-                        if (result != null) {
+                        Log.d("Results", String.valueOf(result.getHeaders().code()));
+                        if (result.getHeaders().code() == 200) {
                             try {
-
-                                String jsonString = result.toString();
-                                JSONObject jsonObject = new JSONObject(jsonString);
-                                Log.d("Results", jsonString);
-
-                                if (jsonObject.getString("resp_code").equals("013")) {
-
-                                    Toast.makeText(this, "" + jsonObject.getString("resp_desc"), Toast.LENGTH_SHORT).show();
-                                    complaint.setText("");
-                                    edit.putString("image_string", "");
                                     progressDialog.dismiss();
-                                    dialog.dismiss();
-
-
-                                    //    displayingEscalation();
-                                    //this.finish();
-                                } else {
-                                    progressDialog.dismiss();
-                                    Toast.makeText(this, "Escalation sending failed", Toast.LENGTH_SHORT).show();
+                                    imageDisplayVisibility.setVisibility(View.GONE);
+                                    btnTakeImage.setVisibility(View.VISIBLE);
+                                    Toast.makeText(this, "Validation Successful", Toast.LENGTH_SHORT).show();
                                     //displayDialog(getResources().getString(R.string.invalid_username_password));
-                                }
+
 
 
                             } catch (Exception ex) {
                                 ex.printStackTrace();
-                                //progressDialog.dismiss();
+                                progressDialog.dismiss();
                                 //displayDialog(getResources().getString(R.string.unknown_error));
                             }
                         } else {
-                            //progressDialog.dismiss();
-                            //displayDialog(getResources().getString(R.string.unknown_error));
-                            Log.e("Ion Exception", "wtf", e);
+                            try {
+                                String jsonString = result.getResult().toString();
+                                JSONObject jsonObject = new JSONObject(jsonString);
+                                progressDialog.dismiss();
+                                Toast.makeText(this, jsonObject.getString("message"), Toast.LENGTH_SHORT).show();
+                                //displayDialog(getResources().getString(R.string.unknown_error));
+                            } catch (JSONException ex) {
+                                progressDialog.dismiss();
+
+                                ex.printStackTrace();
+                            }
+
+
                         }
                     });
         } else {
@@ -332,5 +371,49 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "Network unavailable. Please try again later.", Toast.LENGTH_SHORT).show();
         }
 
+    }
+
+    private HostnameVerifier getHostnameVerifier() {
+        return (hostname, session) -> {
+            return true;
+            // or the following:
+            // HostnameVerifier hv = HttpsURLConnection.getDefaultHostnameVerifier();
+            // return hv.verify("www.yourserver.com", session);
+        };
+    }
+
+    private TrustManager[] getWrappedTrustManagers(TrustManager[] trustManagers) {
+        final X509TrustManager originalTrustManager = (X509TrustManager) trustManagers[0];
+        return new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return originalTrustManager.getAcceptedIssuers();
+                    }
+
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) {
+                        try {
+                            if (certs != null && certs.length > 0){
+                                certs[0].checkValidity();
+                            } else {
+                                originalTrustManager.checkClientTrusted(certs, authType);
+                            }
+                        } catch (CertificateException e) {
+                            Log.w("checkClientTrusted", e.toString());
+                        }
+                    }
+
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) {
+                        try {
+                            if (certs != null && certs.length > 0){
+                                certs[0].checkValidity();
+                            } else {
+                                originalTrustManager.checkServerTrusted(certs, authType);
+                            }
+                        } catch (CertificateException e) {
+                            Log.w("checkServerTrusted", e.toString());
+                        }
+                    }
+                }
+        };
     }
 }
