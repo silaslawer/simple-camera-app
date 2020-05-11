@@ -295,7 +295,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void validationDocument() throws UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException, URISyntaxException, IOException, CertificateException {
-        connectionDetector = new ConnectionDetector(this);g
+        connectionDetector = new ConnectionDetector(this);
         progressDialog.show();
         if (connectionDetector.isNetworkAvailable()) {
 
